@@ -9,7 +9,7 @@ from pathlib import Path
 
 from .analyzer import analyze_workbook, HAVE_CALAMINE
 from .export import export_sub_tables_to_csv
-from .charts import render_charts_to_png
+from .charts import render_charts_to_png, export_charts_to_csv
 
 
 def main() -> None:
@@ -27,10 +27,18 @@ def main() -> None:
         print(f"  - {p}")
 
     if rep.extracted_charts:
-        png_dir = Path(out) / "charts"
-        pngs = render_charts_to_png(src, rep.extracted_charts, png_dir,
+        # Export chart data as CSVs
+        chart_dir = Path(out) / "charts"
+        chart_csvs = export_charts_to_csv(src, rep.extracted_charts, chart_dir,
+                                          values_by_sheet=rep.values_by_sheet)
+        print(f"\nExported {len(chart_csvs)} chart data CSV(s) to {chart_dir}/")
+        for p in chart_csvs:
+            print(f"  - {p}")
+
+        # Also render PNGs (best-effort)
+        pngs = render_charts_to_png(src, rep.extracted_charts, chart_dir,
                                     values_by_sheet=rep.values_by_sheet)
-        print(f"\nRendered {len(pngs)}/{len(rep.extracted_charts)} chart(s) to {png_dir}/")
+        print(f"Rendered {len(pngs)}/{len(rep.extracted_charts)} chart PNG(s)")
         for p in pngs:
             print(f"  - {p}")
 

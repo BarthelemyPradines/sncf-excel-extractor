@@ -240,7 +240,7 @@ def render_charts_to_png(xlsx_path: str | Path,
                          out_dir: str | Path,
                          values_by_sheet: dict[str, list[list]] | None = None
                          ) -> list[str]:
-    """Render each chart XML to a PNG."""
+    """Render each chart XML to a PNG using matplotlib."""
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     written: list[str] = []
@@ -264,5 +264,97 @@ def render_charts_to_png(xlsx_path: str | Path,
                 written.append(str(png_path))
         except Exception as e:
             print(f"  warning: failed to render {chart_xml.name}: {e}")
+
+    return written
+
+
+# -- Chart data CSV export --
+
+PLOT_TAGS = [
+    "c:barChart", "c:lineChart", "c:pieChart", "c:doughnutChart",
+    "c:scatterChart", "c:areaChart",
+]
+
+
+def _extract_chart_data(chart_xml_path: Path,
+                        values_by_sheet: dict[str, list[list]] | None = None,
+                        ) -> tuple[str | None, list[dict]]:
+    """Parse a chart XML and return (title, series_list).
+
+    Each series dict has keys: title, categories, values, xs.
+    """
+    tree = ET.parse(chart_xml_path)
+    root = tree.getroot()
+    plot_area = root.find(".//c:plotArea", CHART_NS)
+    if plot_area is None:
+        return None, []
+
+    title_parts = [t.text for t in root.findall(".//c:title//a:t", CHART_NS)
+                   if t.text]
+    title = "".join(title_parts) if title_parts else None
+
+    for tag in PLOT_TAGS:
+        plot = plot_area.find(tag, CHART_NS)
+        if plot is not None:
+            series = _chart_series(plot, values_by_sheet)
+            if series:
+                return title, series
+
+    return title, []
+
+
+def export_charts_to_csv(xlsx_path: str | Path,
+                         chart_xml_paths: list[str],
+                         out_dir: str | Path,
+                         values_by_sheet: dict[str, list[list]] | None = None,
+                         ) -> list[str]:
+    """Export each chart's underlying data as a CSV file."""
+    import pandas as pd
+
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    written: list[str] = []
+
+    sheet_map = chart_to_sheet_map(xlsx_path)
+    chart_to_sheet: dict[str, str] = {
+        chart_name: sheet
+        for sheet, chart_names in sheet_map.items()
+        for chart_name in chart_names
+    }
+
+    seen_per_sheet: dict[str, int] = {}
+    for chart_xml in chart_xml_paths:
+        chart_xml = Path(chart_xml)
+        sheet = chart_to_sheet.get(chart_xml.name, "unknown")
+        seen_per_sheet[sheet] = seen_per_sheet.get(sheet, 0) + 1
+
+        title, series = _extract_chart_data(chart_xml, values_by_sheet)
+        if not series:
+            print(f"  warning: no data found in {chart_xml.name}")
+            continue
+
+        # Build a DataFrame: category column + one column per series
+        max_len = max(len(s["values"]) for s in series)
+        data: dict[str, list] = {}
+
+        cats = series[0]["categories"]
+        if cats:
+            data["category"] = list(cats) + [None] * (max_len - len(cats))
+
+        # For scatter charts, include X values
+        xs = series[0].get("xs")
+        if xs:
+            data["x"] = list(xs) + [None] * (max_len - len(xs))
+
+        for s in series:
+            col_name = s["title"] or f"series_{len(data) + 1}"
+            vals = s["values"]
+            data[col_name] = list(vals) + [None] * (max_len - len(vals))
+
+        df = pd.DataFrame(data)
+        csv_name = f"{safe_name(sheet)}__chart{seen_per_sheet[sheet]}.csv"
+        csv_path = out_dir / csv_name
+        df.to_csv(csv_path, index=False)
+        written.append(str(csv_path))
 
     return written
