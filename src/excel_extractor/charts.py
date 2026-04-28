@@ -2,9 +2,15 @@
 
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 from xml.etree import ElementTree as ET
+
+# Force Agg backend before anything imports pyplot.
+os.environ.pop("MPLBACKEND", None)
+import matplotlib
+matplotlib.use("Agg", force=True)
 
 from .models import safe_name
 from .media import chart_to_sheet_map
@@ -118,8 +124,6 @@ def _render_one_chart(chart_xml_path: Path,
                       values_by_sheet: dict[str, list[list]] | None = None
                       ) -> bool:
     """Render a single chart XML to PNG. Returns True on success."""
-    import matplotlib
-    matplotlib.use("Agg", force=True)
     import matplotlib.pyplot as plt
 
     tree = ET.parse(chart_xml_path)
