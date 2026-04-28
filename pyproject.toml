@@ -5,6 +5,7 @@ description = "Excel sheet triage, sub-table detection, media extraction, and CS
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "matplotlib>=3.10.9",
     "numpy>=2.4.4",
     "openpyxl>=3.1.5",
     "pandas>=3.0.2",
