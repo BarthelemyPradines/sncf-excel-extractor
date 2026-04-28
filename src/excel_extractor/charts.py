@@ -210,8 +210,22 @@ def _render_one_chart(chart_xml_path: Path,
                                             s["values"]) if v is not None]
             if pairs:
                 cats, vals = zip(*pairs)
-                ax.pie(vals, labels=[str(c) for c in cats],
-                       autopct="%1.1f%%")
+                is_pct = _is_pct_format(s.get("val_format"))
+                # Also detect values that look like percentages (all <= 1)
+                # even without explicit format tag.
+                if not is_pct:
+                    numeric = [v for v in vals if isinstance(v, (int, float))]
+                    if numeric and all(0 <= v <= 1 for v in numeric):
+                        is_pct = True
+                if is_pct:
+                    # Values are already percentages — show them as-is
+                    original_pcts = [v * 100 for v in vals]
+                    ax.pie(vals, labels=[str(c) for c in cats],
+                           autopct=lambda p, op=original_pcts:
+                               f"{op.pop(0):.1f}%")
+                else:
+                    ax.pie(vals, labels=[str(c) for c in cats],
+                           autopct="%1.1f%%")
                 ax.set_aspect("equal")
                 rendered = True
 
@@ -367,7 +381,9 @@ def export_charts_to_csv(xlsx_path: str | Path,
         for s in series:
             col_name = s["title"] or f"series_{len(data) + 1}"
             vals = list(s["values"]) + [None] * (max_len - len(s["values"]))
-            if _is_pct_format(s.get("val_format")):
+
+            is_pct = _is_pct_format(s.get("val_format"))
+            if is_pct:
                 vals = [
                     f"{v * 100:.2f}%" if isinstance(v, (int, float)) else v
                     for v in vals
