@@ -119,7 +119,7 @@ def _render_one_chart(chart_xml_path: Path,
                       ) -> bool:
     """Render a single chart XML to PNG. Returns True on success."""
     import matplotlib
-    matplotlib.use("Agg")
+    matplotlib.use("Agg", force=True)
     import matplotlib.pyplot as plt
 
     tree = ET.parse(chart_xml_path)
