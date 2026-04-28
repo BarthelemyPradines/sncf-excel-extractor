@@ -93,6 +93,21 @@ def _chart_pts(elem: ET.Element,
     return _resolve_ref(f_node.text, values_by_sheet)
 
 
+def _detect_num_format(elem: ET.Element | None) -> str | None:
+    """Extract the formatCode from a <c:numFmt> inside a val/cat element."""
+    if elem is None:
+        return None
+    fmt_node = elem.find(".//c:numFmt", CHART_NS)
+    if fmt_node is not None:
+        return fmt_node.attrib.get("formatCode")
+    return None
+
+
+def _is_pct_format(fmt: str | None) -> bool:
+    """Check if a number format string represents percentages."""
+    return fmt is not None and "%" in fmt
+
+
 def _chart_series(plot_elem: ET.Element,
                   values_by_sheet: dict[str, list[list]] | None = None) -> list[dict]:
     series = []
@@ -106,6 +121,7 @@ def _chart_series(plot_elem: ET.Element,
 
         val = ser.find("c:val", CHART_NS)
         vals = _chart_pts(val, values_by_sheet) if val is not None else []
+        val_fmt = _detect_num_format(val)
 
         xval = ser.find("c:xVal", CHART_NS)
         xs = (_chart_pts(xval, values_by_sheet)
@@ -114,8 +130,10 @@ def _chart_series(plot_elem: ET.Element,
         yval = ser.find("c:yVal", CHART_NS)
         if yval is not None:
             vals = _chart_pts(yval, values_by_sheet)
+            val_fmt = _detect_num_format(yval)
 
-        series.append(dict(title=title, categories=cats, values=vals, xs=xs))
+        series.append(dict(title=title, categories=cats, values=vals,
+                           xs=xs, val_format=val_fmt))
     return series
 
 
@@ -348,8 +366,13 @@ def export_charts_to_csv(xlsx_path: str | Path,
 
         for s in series:
             col_name = s["title"] or f"series_{len(data) + 1}"
-            vals = s["values"]
-            data[col_name] = list(vals) + [None] * (max_len - len(vals))
+            vals = list(s["values"]) + [None] * (max_len - len(s["values"]))
+            if _is_pct_format(s.get("val_format")):
+                vals = [
+                    f"{v * 100:.2f}%" if isinstance(v, (int, float)) else v
+                    for v in vals
+                ]
+            data[col_name] = vals
 
         df = pd.DataFrame(data)
         csv_name = f"{safe_name(sheet)}__chart{seen_per_sheet[sheet]}.csv"
