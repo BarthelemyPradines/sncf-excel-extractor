@@ -7,7 +7,7 @@ import sys
 import time
 from pathlib import Path
 
-from .analyzer import analyze_workbook, HAVE_CALAMINE
+from .analyzer import analyze_workbook
 from .export import export_sheet_to_csv
 from .charts import render_charts_to_png, export_charts_to_csv
 from .media import chart_to_sheet_map, image_to_sheet_map, extract_images_for_sheet
@@ -23,16 +23,19 @@ def _sheet_is_simple(sheet, chart_map: dict, image_map: dict) -> bool:
 
 
 def main() -> None:
-    src = sys.argv[1] if len(sys.argv) > 1 else "input.xlsx"
-    out_base = sys.argv[2] if len(sys.argv) > 2 else "output"
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    flags = {a for a in sys.argv[1:] if a.startswith("--")}
+
+    src = args[0] if len(args) > 0 else "input.xlsx"
+    out_base = args[1] if len(args) > 1 else "output"
+    formula_results = "--no-formula-results" not in flags
 
     xlsx_path = Path(src)
     root_dir = Path(out_base) / xlsx_path.stem
 
     t0 = time.time()
-    rep = analyze_workbook(src)
-    print(f"Analyzed in {time.time() - t0:.2f}s "
-          f"(calamine={'yes' if HAVE_CALAMINE else 'no'})")
+    rep = analyze_workbook(src, formula_results=formula_results)
+    print(f"Analyzed in {time.time() - t0:.2f}s")
 
     chart_map = chart_to_sheet_map(src)
     image_map = image_to_sheet_map(src)
