@@ -14,4 +14,4 @@ wheels/
 uv.lock
 
 data/
-csv_out/
+output/

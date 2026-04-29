@@ -95,10 +95,10 @@ def extract_media(xlsx_path: str | Path,
     return images, charts
 
 
-def chart_to_sheet_map(xlsx_path: str | Path) -> dict[str, list[str]]:
-    """Map each sheet name to its chart XML basenames."""
-    xlsx_path = Path(xlsx_path)
-    out: dict[str, list[str]] = {}
+def _sheet_drawing_rels(xlsx_path: Path) -> dict[str, list[tuple[str, str]]]:
+    """Walk xlsx rels and return {sheet_name: [(type_suffix, zip_path), ...]}
+    where type_suffix is 'chart' or 'image'."""
+    result: dict[str, list[tuple[str, str]]] = {}
 
     with zipfile.ZipFile(xlsx_path) as z:
         names = set(z.namelist())
@@ -111,7 +111,7 @@ def chart_to_sheet_map(xlsx_path: str | Path) -> dict[str, list[str]]:
             sheet_name = s.attrib["name"]
             rid = s.attrib[f"{{{NS['r']}}}id"]
             sheet_path = normalize_target(rels[rid])
-            out[sheet_name] = []
+            result[sheet_name] = []
 
             sheet_rel_path = sheet_path.replace("worksheets/",
                                                 "worksheets/_rels/") + ".rels"
@@ -135,8 +135,53 @@ def chart_to_sheet_map(xlsx_path: str | Path) -> dict[str, list[str]]:
                 d_rel_xml = z.read(drawing_rel_path)
                 for r in ET.fromstring(d_rel_xml):
                     t = r.attrib.get("Type", "")
+                    target = normalize_target(r.attrib.get("Target", ""))
                     if t.endswith("/chart"):
-                        chart_target = normalize_target(r.attrib["Target"])
-                        out[sheet_name].append(Path(chart_target).name)
+                        result[sheet_name].append(("chart", target))
+                    elif t.endswith("/image"):
+                        result[sheet_name].append(("image", target))
 
-    return out
+    return result
+
+
+def chart_to_sheet_map(xlsx_path: str | Path) -> dict[str, list[str]]:
+    """Map each sheet name to its chart XML basenames."""
+    xlsx_path = Path(xlsx_path)
+    rels = _sheet_drawing_rels(xlsx_path)
+    return {
+        sheet: [Path(path).name for kind, path in items if kind == "chart"]
+        for sheet, items in rels.items()
+    }
+
+
+def image_to_sheet_map(xlsx_path: str | Path) -> dict[str, list[str]]:
+    """Map each sheet name to its image zip paths (xl/media/...)."""
+    xlsx_path = Path(xlsx_path)
+    rels = _sheet_drawing_rels(xlsx_path)
+    return {
+        sheet: [path for kind, path in items if kind == "image"]
+        for sheet, items in rels.items()
+    }
+
+
+def extract_images_for_sheet(xlsx_path: str | Path,
+                             image_zip_paths: list[str],
+                             out_dir: str | Path) -> list[str]:
+    """Extract specific images from the xlsx zip into out_dir."""
+    xlsx_path = Path(xlsx_path)
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    written: list[str] = []
+
+    with zipfile.ZipFile(xlsx_path) as z:
+        for zip_path in image_zip_paths:
+            try:
+                base = Path(zip_path).name
+                target = out_dir / base
+                with z.open(zip_path) as src, open(target, "wb") as dst:
+                    shutil.copyfileobj(src, dst)
+                written.append(str(target))
+            except KeyError:
+                continue
+
+    return written
